@@ -1,0 +1,31 @@
+a = sint(2)
+
+# 方案1好太多
+loop_num = 1000000
+
+# loop_num = 1000     0.00069901
+# loop_num = 10000    0.00610481
+# loop_num = 100000   0.056974
+
+start_timer(1)
+for i in range(loop_num):
+    a/2
+stop_timer(1)
+
+# loop_num = 1000     0.000215742
+# loop_num = 10000    0.00235238
+# loop_num = 100000   0.202585
+
+start_timer(2)
+for i in range(loop_num):
+    a*2
+stop_timer(2)
+
+# loop_num = 1000     0.000195341
+# loop_num = 10000    0.00227551
+# loop_num = 100000   0.0200094
+
+start_timer(3)
+for i in range(loop_num):
+    a+2
+stop_timer(3)

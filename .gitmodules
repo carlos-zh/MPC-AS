@@ -1,0 +1,9 @@
+[submodule "deps/libOTe"]
+	path = deps/libOTe
+	url = https://github.com/mkskeller/softspoken-implementation.git
+[submodule "deps/SimpleOT"]
+	path = deps/SimpleOT
+	url = https://github.com/mkskeller/SimpleOT.git
+[submodule "deps/SimplestOT_C"]
+	path = deps/SimplestOT_C
+	url = https://github.com/mkskeller/SimplestOT_C.git

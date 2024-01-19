@@ -1,0 +1,393 @@
+# sint: secret integers
+
+# you can assign public numbers to sint
+
+from Compiler.types import sint, regint, Array, MemValue, cfix, compute_inverse
+
+a = sint(1)
+b = sint(2)
+
+#@ 直接打印a
+print(a)
+
+def test(actual, expected):
+
+    # you can reveal a number in order to print it
+
+    actual = actual.reveal()
+    print_ln('expected %s, got %s', expected, actual)
+
+# private inputs are read from Player-Data/Input-P<i>-0
+# or from standard input if using command-line option -I
+#@ 注意，get_input_from(i)会从Player-Data/Input-P<i>-0文件中逐次读取值（空格分隔），跟堆栈差不多，读一次弹出一个值。
+for i in 0, 1:
+    print_ln('got %s from player %s', sint.get_input_from(i).reveal(), i)
+
+# some arithmetic works as expected
+
+test(a + b, 3)
+test(a * b, 2)
+test(a - b, -1)
+
+# Division can mean different things in different domains
+# and there has be a specified bit length in some,
+# so we use int_div() for integer division.
+# k-bit division requires (4k+1)-bit computation.
+
+test(b.int_div(a, 15), 2)
+
+# comparisons produce 1 for true and 0 for false
+
+test(a < b, 1)
+test(a <= b, 1)
+test(a >= b, 0)
+test(a > b, 0)
+test(a == b, 0)
+test(a != b, 1)
+
+# if_else() can be used instead of branching
+# let's find out the larger number
+test((a < b).if_else(b, a), 2)
+
+# arrays and loops work as follows
+#@ 这一句是声明a为一个sint类型的100个元素的数组，默认初始值为0
+a = Array(100, sint)
+
+#@ 这一句开始给a的每个元素赋值
+@for_range(100)
+def f(i):
+    a[i] = sint(i) * sint(i - 1)
+
+test(a[99], 99 * 98)
+
+# if you use loops, use Array to store results
+# don't do this
+# @for_range(100)
+# def f(i):
+#     a = sint(i)
+# test(a, 99)
+
+# sfix: fixed-point numbers
+
+# set the precision after the dot and in total
+
+sfix.set_precision(16, 31)
+
+# and the output precision in decimal digits
+
+print_float_precision(4)
+
+# you can do all basic arithmetic with sfix, including division
+
+a = sfix(2)
+b = sfix(-0.1)
+
+test(a + b, 1.9)
+test(a - b, 2.1)
+test(a * b, -0.2)
+test(a / b, -20)
+test(a < b, 0)
+test(a <= b, 0)
+test(a >= b, 1)
+test(a > b, 1)
+test(a == b, 0)
+test(a != b, 1)
+
+test((a < b).if_else(a, b), -0.1)
+
+# now let's do a computation with private inputs
+# party 0 supplies three number and party 1 supplies three percentages
+# we want to compute the weighted mean
+
+print_ln('Party 0: please input three numbers not adding up to zero')
+print_ln('Party 1: please input any three numbers')
+
+data = Matrix(3, 2, sfix)
+
+# use @for_range_opt for balanced optimization
+# but use Python loops if compile-time numbers are need (e.g., for players)
+
+@for_range_opt(3)
+def _(i):
+    for j in range(2):
+        data[i][j] = sfix.get_input_from(j)
+
+# compute weighted average
+#@ 注意，for point in data语句，如果data是一个Matrix，那么point是data的每一行Array
+weight_total = sum(point[0] for point in data)
+result = sum(point[0] * point[1] for point in data) / weight_total
+
+# branching is supported also depending on revealed secret data
+# with garbled circuits this triggers a interruption of the garbling
+
+@if_e((sum(point[0] for point in data) != 0).reveal())
+def _():
+    print_ln('weighted average: %s', result.reveal())
+@else_
+def _():
+    print_ln('your inputs made no sense')
+
+# permutation matrix
+
+M = Matrix(2, 2, sfix)
+M[0][0] = 0
+M[1][0] = 1
+M[0][1] = 1
+M[1][1] = 0
+
+# matrix multiplication
+
+# M = data * M
+test(M[0][0], data[0][1].reveal())
+test(M[1][1], data[1][0].reveal())
+N = M[0]
+print_ln('N[1]=M[0][1]= %s', N[1].reveal())
+
+############################################################################
+
+"""
+# list在mpc文件中的操作
+y_list = [cint(1), cint(-1), cint(2)]
+print_ln('y_list operation: y_list[1] * y_list[2]=%s', (y_list[1] * y_list[2]).reveal())
+
+# for循环在mpc文件中的操作
+for i in range(len(y_list)):
+    y_list[i] = y_list[i] + 1
+for i in range(len(y_list)):
+    print_ln('y_list[%s]=%s', i, y_list[i].reveal())
+"""
+
+
+# 方案一：实现读入list并验证y (对应于types.py中返回received)
+"""
+y_list = [cint(1), cint(-1), cint(-3)]
+flag = MemValue(regint(1))
+for i in range(3):
+    print_ln('y_list[%s]=%s', i, y_list[i])
+    @if_(y_list[i] * y_list[i] != 1)
+    def _():
+        print_ln('i=%s, enter the if function!', i)
+        flag.write(regint(0))
+    
+@if_e(flag)
+def _():
+    print_ln('succeed!')
+@else_
+def _():
+    print_ln('defeat!')
+"""
+
+# 方案二：全部用Array类型。library里有break_loop()函数，想加break_loop 必须用@for_range，从而必须用Array输入:那就用！
+"""
+y_list = [cint(1), cint(-1), cint(1), cint(-3), cint(1)]
+y_array = Array(len(y_list), cint)
+for i in range(len(y_list)):
+    y_array[i] = y_list[i]
+    print_ln('y_array[%s]=%s', i, y_array[i])
+
+flag = MemValue(regint(1))
+@for_range(len(y_list))
+def _(i):
+    print_ln('y_array[%s]=%s', i, y_array[i])
+    @if_(y_array[i] * y_array[i] != 1)
+    def _():
+        print_ln('i=%s, enter the if function!', i)
+        flag.write(regint(0))
+        break_loop()
+        
+@if_e(flag)
+def _():
+    print_ln('succeed!')
+@else_
+def _():
+    print_ln('defeat!')
+"""
+
+
+
+# 不得不用@for_range()的情况
+"""
+n = MemValue(regint(8))
+m = Array(3, regint)
+m.assign_all(regint(1))
+for i in range(regint(3)):
+    print_ln('You can not see this sentense in output, since the regint(3) can not be the loop parameter')
+"""
+
+
+# 学习MemValue的赋值，累加等方法
+MAX_NUM_CLIENTS = 10
+number_clients = MemValue(regint(5))
+number_verified_clients = MemValue(regint(0))
+X_array = sint.Array(MAX_NUM_CLIENTS)
+flag = MemValue(regint(1))
+@for_range(number_clients)
+def _(client_id):
+    @if_(flag)
+    def _():
+        number_verified_clients.write(number_verified_clients + 1)    # 有效client输入数+1
+        X_array[number_verified_clients - 1] = 10                      # 将有效的client输入存入x_array数组
+
+print_ln('number_verified_clients=%s', number_verified_clients)
+for i in range(6):
+    print_ln('X_array[%s]=%s', i, X_array[i].reveal())
+
+
+
+Y = cint.MemValue(10)
+print_ln('Y mod 3 = %s', (Y / 3).reveal())  # 这个输出很奇怪，是一个很大的数 56713727820156410577229101238628635993
+print_ln('Y mod 3 = %s', Y // 3)            # 这个就是正常整除
+
+client_id = 0
+n = 8
+y_array = cint.Array(n)
+@for_range(n)
+def _(i):
+    @if_e(Y != 0)
+    def _():
+        @if_e(Y - Y // 2 * 2 == 0)
+        def _():
+            y_array[i] = -1
+        @else_
+        def _():
+            y_array[i] = 1
+        Y.write(Y // 2)
+    @else_
+    def _():
+        y_array[i] = -1
+    print_ln('Test clinet%s send y_array[%s]=%s', client_id, i, y_array[i])
+
+
+r = sint(-1)
+y = cint(1)
+x = r * y
+print_ln('x=%s', x.reveal())
+xx = (x+1) / 2
+print_ln('xx=%s', xx.reveal())
+
+
+
+a = cint.MemValue(11)
+@for_range(8)
+def _(i):
+    print_ln('%s', a & 1)
+    a.write(a >> 1)
+
+
+"""
+# 这个会报错
+a = cint(11)
+@for_range(8)
+def _(i):
+    print_ln('%s', a & 1)
+    a = a >> 1
+"""
+
+
+"""
+number_clients = 3
+number_bits = 2
+
+x_matrix = Matrix(number_clients, number_bits, sint)
+x_matrix[0][0] = 0
+x_matrix[1][0] = 1
+x_matrix[2][0] = 1
+x_matrix[0][1] = 0
+x_matrix[1][1] = 1
+x_matrix[2][1] = 0
+
+x_sum_array = sint.Array(number_bits)
+x_sum_array[:] = x_matrix[0][:]
+@for_range(number_clients -1)
+def _(client_id):
+    x_sum_array[:] += x_matrix[client_id + 1][:]
+
+AND_flag = cint.MemValue(1)
+@for_range(number_bits)
+def _(bit_id):
+    @if_(x_sum_array[bit_id].reveal() != 0)
+    def _():
+        print_ln('The sum of the %sth bit is nonzero (x_sum_array[%s]=%s). The AND result is 0.', bit_id, bit_id, x_sum_array[bit_id].reveal())
+        AND_flag.write(0)
+        break_loop()
+@if_(AND_flag == 1)
+def _():
+    print_ln('The AND result is 1.')
+"""
+
+
+
+"""
+X = sint.Matrix(2, 3)
+Y = sint.Matrix(1, 3)
+X[0][0] = 0
+X[0][1] = 1
+X[0][2] = 2
+X[1][0] = 1
+X[1][1] = 2
+X[1][2] = 3
+
+
+Y[0][0] = 1
+Y[0][1] = 2
+Y[0][2] = 0
+
+# 计算XTX和XTY并reveal
+XTX = X.mul_trans(X)
+@for_range(2)
+def _(i):
+    @for_range(2)
+    def _(j):
+        print_ln('XTX[%s][%s] = %s', i, j, XTX[i][j].reveal())
+
+XTY = X.mul_trans(Y)
+@for_range(2)
+def _(i):
+    print_ln('XTY[%s][0] = %s', i, XTY[i][0].reveal())
+
+
+X = sint.Matrix(2, 3)
+Y = sint.Matrix(3, 1)
+X[0][0] = 0
+X[0][1] = 1
+X[0][2] = 2
+X[1][0] = 1
+X[1][1] = 2
+X[1][2] = 3
+
+
+Y[0][0] = 1
+Y[1][0] = 2
+Y[2][0] = 0
+
+Z = X * Y
+
+@for_range(2)
+def _(i):
+    print_ln('Z[%s][0] = %s', i, Z[i][0].reveal())
+
+"""
+
+X = cfix.Matrix(2, 2)
+Y = cfix.Matrix(2, 1)
+
+X[0][0] = 1
+X[0][1] = 2
+X[1][0] = 2
+X[1][1] = 1
+
+Y[0][0] = 1
+Y[1][0] = 1
+
+
+result = compute_inverse(X, 2) * Y
+@for_range(2)
+def _(i):
+    print_ln('result[%s][%s] = %s', i, 0, result[i][0])
+"""
+@for_range(2)
+def _(i):
+    @for_range(2)
+    def _(j):
+        print_ln('result[%s][%s] = %s', i, j, result[i][j])
+"""

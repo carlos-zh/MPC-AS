@@ -1,0 +1,723 @@
+
+"""
+  Our protocols about Malicious VDAF problem.
+  1. securely compute the sum of private values from the clients.
+
+  Demonstrate clients external to computing parties supplying input and receiving an authenticated result. Need .cpp file to do some work,
+  such as bankers-bonus-client.cpp for client (and setup instructions).
+  
+  Wait for MAX_NUM_CLIENTS to join the game or client finish flag to be sent before calculating.
+
+  Note each client connects in a single thread and so is potentially blocked.
+  
+  Each round / game will reset and so this runs indefinitiely.
+"""
+
+from Compiler.types import sint, regint, Array, MemValue
+from Compiler.library import print_ln, do_while, for_range
+from Compiler.util import if_else
+import time
+
+PORTNUM = 14000       # clinet-server通信的端口
+MAX_NUM_CLIENTS = 8   # client最多的数量
+n_rounds = 0
+n_threads = 2         
+number_bits = 8      # 客户端输入向量的长度 #####################################
+number_variants = 2  # LR的变量个数         #####################################  
+
+if len(program.args) > 1:
+    n_rounds = int(program.args[1])
+
+if len(program.args) > 2:
+    program.active = bool(int(program.args[2]))
+
+def accept_client():
+    client_socket_id = accept_client_connection(PORTNUM)      # accept_client_connection(): Accept client connection on specific port base, return client id.
+    last = regint.read_from_socket(client_socket_id)          # read_from_socket(): 每个basic type都有的一个属性吧，用于Receive clear integer value(s) from client；client_id n size 三个参数，这里只用了第一个
+    return client_socket_id, last
+
+def close_connections(number_clients):
+    @for_range(number_clients)
+    def _(i):
+        closeclientconnection(i)
+
+def Z2N(value):
+    """
+    zero to negtive one
+    """
+    return 2 * value - 1
+
+def N2Z(value):
+    """
+    negtive one to zero
+    """
+    return (value + 1) / 2
+
+
+def server_to_client(number_bits):
+    r_array = Array(number_bits, sint)   # {0,1}随机数数组
+    R = Array(1, sint)                   # r_array表示成的p域的数
+
+    tmp = sint.get_random_bit()
+    r_array[0] = Z2N(tmp)
+    R[0] = tmp
+
+    @for_range(number_bits-1)
+    def _(i):
+        tmp = sint.get_random_bit()
+        r_array[i+1] = Z2N(tmp)
+        R[0] += 2 ** (i+1) * tmp
+
+    return r_array, R[0]
+
+def verify_client_inputs(client_values, number_bits):
+    """
+    暂时不用
+    """
+    flag = 1
+    @for_range(number_bits)
+    def _(i):
+        @if_(client_values[i] ** 2 != 1)   # 平方不为1，则置flag=0
+        def _():
+            flag = 0
+    return flag
+
+def bin_to_dec(x_array, number_bits):
+    x = Array(1, sint)
+    x[0] = x_array[0]
+    @for_range(number_bits-1)
+    def _(i):
+        x[0] += 2 ** (i+1) * x_array[i+1]
+    return x[0]
+
+def transform_valid_inputs(y_array, r_array, number_bits):
+    """
+    Input: y_list from client, <r_array> in server, the number of bits of the client value
+    Output: decimal x
+    """
+    x_array = Array(number_bits, sint)
+
+    @for_range(number_bits)
+    def _(i):
+        x_array[i] = (y_array[i] * r_array[i] + 1) / 2
+        print_ln('!!!!!!Test in {0,1}  x_array[%s]=%s', i, x_array[i].reveal())
+    x = bin_to_dec(x_array, number_bits)
+    print_ln('!!!!!!Test DEC x=%s', x.reveal())
+
+    return x
+
+def server_LR_sum_x1_and_x2(y_array, r_array, number_bits):
+
+    x1_array = Array(number_bits//2, sint)
+    x2_array = Array(number_bits//2, sint)
+    x1x2_array = Array(number_bits//2, sint)
+    x1x1_array = Array(number_bits//2, sint)
+
+    @for_range(number_bits//2)
+    def _(i):
+        x1_array[i] = (y_array[i] * r_array[i] + 1) / 2
+        print_ln('!!!!!!Test in {0,1}  x1_array[%s]=%s', i, x1_array[i].reveal())
+
+        x2_array[i] = (y_array[i + number_bits // 2] * r_array[i + number_bits // 2] + 1) / 2
+        print_ln('!!!!!!Test in {0,1}  x2_array[%s]=%s', i, x2_array[i].reveal())
+
+        # x1x2_array[i] = x1_array[i] * x2_array[i]
+        # print_ln('!!!!!!Test in {0,1}  x1x2_array[%s]=%s', i, x1x2_array[i].reveal())
+
+        # x1x1_array[i] = x1_array[i] * x1_array[i]
+        # print_ln('!!!!!!Test in {0,1}  x1x1_array[%s]=%s', i, x1x1_array[i].reveal())
+
+    X1 = bin_to_dec(x1_array, number_bits//2)
+    X2 = bin_to_dec(x2_array, number_bits//2)
+    X1X2 = X1 * X2
+    X1X1 = X1 * X1
+    print_ln('!!!!!!Test DEC X1=%s', X1.reveal())
+    print_ln('!!!!!!Test DEC X2=%s', X2.reveal())
+    print_ln('!!!!!!Test DEC X1X2=%s', X1X2.reveal())
+    print_ln('!!!!!!Test DEC X1X1=%s', X1X1.reveal())    
+
+    return X1, X2, X1X2, X1X1
+
+def server_LR_sum(y_array, r_array, number_bits, number_variants):
+    """
+    xk = c0 + c1 * x1 + ... + c_{k-1} * x_{k-1}
+    number_variants=k表示变量个数，也是客户端数据向量(x1,...xk)的元素个数，我们假设服务器知道此值
+    """
+    x_array = Array(number_variants, sint)                 # 存十进制的x1 ... xk
+    temp_array = Array(number_bits//number_variants, sint) # 暂存二进制的number_bits//number_variants位(取值0或1)
+    @for_range(number_variants)
+    def _(i):
+        @for_range(number_bits//number_variants)
+        def _(j):
+            temp_array[j] =  (y_array[i * number_bits//number_variants + j] * r_array[i * number_bits//number_variants + j] + 1) / 2
+        x_array[i] = bin_to_dec(temp_array, number_bits//number_variants)
+ 
+    return x_array
+
+
+def server_local_computation(number_verified_clients, client_values):
+    """
+    Input: number_verified_clients, all the clients' value <X>
+    Output: the local server summarize all the clients' value<X>
+    """
+    aggregate_result = Array(1, sint)
+    
+    aggregate_result[0] = client_values[0]
+    
+    @for_range(number_verified_clients - 1)
+    def loop_body(i):
+        aggregate_result[0] = aggregate_result[0] + client_values[i+1]
+
+    return aggregate_result[0]
+
+
+def AND_run(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+    
+    server_running_time_start = time.time()            ##############################
+
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    x_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)          # 所有client的x in {0,1}的矩阵
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2.1 验证y
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+        # 1.2.2 计算<x_array>
+        @if_(flag)
+        def _():
+            # 有效client输入数+1
+            number_verified_clients.write(number_verified_clients + 1)
+            # 将有效的client输入存入x_matrix数组
+            @for_range(number_bits)
+            def _(bit_id):
+                x_matrix[number_verified_clients - 1][bit_id] = y_matrix[client_id][bit_id] * r_matrix[client_id][bit_id]
+                print_ln('x_matrix[%s][%s]=%s', number_verified_clients - 1, bit_id, x_matrix[number_verified_clients - 1][bit_id].reveal())
+
+    # 3 最后揭露(reveal)计算结果
+    
+    x_sum_array = sint.Array(number_bits)
+    x_sum_array[:] = x_matrix[0][:]
+    @for_range(number_verified_clients -1)
+    def _(client_id):
+        x_sum_array[:] += x_matrix[client_id + 1][:]
+
+    AND_flag = cint.MemValue(1)
+
+    @for_range(number_bits)
+    def _(bit_id):
+        @if_(x_sum_array[bit_id].reveal() != 0)
+        def _():
+            print_ln('The sum of the %sth bit is nonzero (x_sum_array[%s]=%s). The AND result is 0.', bit_id, bit_id, x_sum_array[bit_id].reveal())
+            AND_flag.write(0)
+            break_loop()
+    
+    @if_(AND_flag == 1)
+    def _():
+        print_ln('The AND result is 1.')
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+def MAX_run(number_clients, number_verified_clients):
+    # 1 接收x_array，因为是p域数，所以无需验证。
+    x_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+        
+        x_list = sint.receive_from_client(number_bits, client_id)
+        for bit_id in range(number_bits):
+            x_matrix[client_id][bit_id] = x_list[bit_id]
+            print_ln('x_matrix[%s][%s] = %s', client_id, bit_id, x_matrix[client_id][bit_id].reveal())
+    
+    server_running_time_start = time.time()            ##############################
+    
+    # 2 计算并揭露(reveal)计算结果
+
+    x_sum_array = sint.Array(number_bits)
+    x_sum_array[:] = x_matrix[0][:]
+    @for_range(number_clients -1)
+    def _(client_id):
+        x_sum_array[:] += x_matrix[client_id + 1][:]
+
+    @for_range(number_bits)
+    def _(bit_id):
+        # 寻找非零元素的最大索引，从后往前找到第一个非零元素即可
+        print_ln('x_sum_array[%s] = %s', number_bits - 1 - bit_id, x_sum_array[number_bits - 1 - bit_id].reveal())
+        @if_(x_sum_array[number_bits - 1 - bit_id].reveal() != 0)
+        def _():
+            print_ln('%s clients, the result of MAX is %s.', number_clients, number_bits - 1 - bit_id)
+            break_loop()
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+
+def SUM_run(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+    
+    server_running_time_start = time.time()            ##############################
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    X_array = sint.Array(MAX_NUM_CLIENTS)          # 所有client的十进制<X>的数组    @@@@@@@@@@@@@@@@@@@@@@@@@@@@此处的数组定义大小关注一下
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2 验证y，计算<x_array>并转成x 
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+        @if_(flag)
+        def _():
+            # 有效client输入数+1
+            number_verified_clients.write(number_verified_clients + 1)
+            # 将有效的client输入存入x_array数组
+            X_array[number_verified_clients - 1] = transform_valid_inputs(y_matrix[client_id], r_matrix[client_id], number_bits)
+            print_ln('X_array[%s]=%s', number_verified_clients - 1, X_array[number_verified_clients - 1].reveal())
+
+    # 3 最后揭露(reveal)计算结果
+    aggregate_result = server_local_computation(number_verified_clients, X_array)
+    print_ln('%s clients, %s valid clients, the result of SUM is %s', number_clients, number_verified_clients, aggregate_result.reveal())
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+def VAR_run(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+        
+    server_running_time_start = time.time()            ##############################
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    X_array = sint.Array(MAX_NUM_CLIENTS)          # 所有client的十进制<X>的数组
+    X2_array = sint.Array(MAX_NUM_CLIENTS)         # 所有client的十进制<X^2>的数组
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2 验证y，计算<x_array>并转成x 
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+
+        @if_(flag)
+        def _():
+            # 有效client输入数+1
+            number_verified_clients.write(number_verified_clients + 1)
+            # 将有效的client输入存入x_array数组
+            X_array[number_verified_clients - 1] = transform_valid_inputs(y_matrix[client_id], r_matrix[client_id], number_bits)
+            X2_array[number_verified_clients - 1] = X_array[number_verified_clients - 1] * X_array[number_verified_clients - 1]   # 这里不对，不是求和的平方，是平方的求和
+            print_ln('X_array[%s]=%s', number_verified_clients - 1, X_array[number_verified_clients - 1].reveal())
+            print_ln('X2_array[%s]=%s', number_verified_clients - 1, X2_array[number_verified_clients - 1].reveal())
+
+    # 3 最后揭露(reveal)计算结果
+    aggregate_part1 = server_local_computation(number_verified_clients, X2_array)
+    aggregate_part2 = server_local_computation(number_verified_clients, X_array)
+    aggregate_result = sfix(aggregate_part1 / number_verified_clients + aggregate_part2 * aggregate_part2 / (number_verified_clients * number_verified_clients))
+    print_ln('%s clients, %s valid clients, the result of VAR is %s', number_clients, number_verified_clients, aggregate_result.reveal())
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+def LR_run(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array(包括x1_array和x2_array)。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+        
+    server_running_time_start = time.time()            ##############################
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    #################### 我们要计算sum(x1*x2)  sum(x1*x1)  sum(x2)   从而拟合曲线 x2 = c0 + c1 * x1 ######################
+    X1_array = sint.Array(MAX_NUM_CLIENTS)          # 所有client的十进制<X1>的数组
+    X2_array = sint.Array(MAX_NUM_CLIENTS)          # 所有client的十进制<X2>的数组
+    X1X2_array = sint.Array(MAX_NUM_CLIENTS)        # 所有client的十进制<X1 * X2>的数组
+    X1X1_array = sint.Array(MAX_NUM_CLIENTS)        # 所有client的十进制<X1 * X1>的数组
+    
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2 验证y，计算<x_array>并转成x 
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+
+        @if_(flag)
+        def _():
+            # 有效client输入数+1
+            number_verified_clients.write(number_verified_clients + 1)
+            # 将有效的client输入存入x_array数组
+            X1_array[number_verified_clients - 1], X2_array[number_verified_clients - 1], X1X2_array[number_verified_clients - 1], X1X1_array[number_verified_clients - 1] = server_LR_sum_x1_and_x2(y_matrix[client_id], r_matrix[client_id], number_bits)
+            print_ln('X1_array[%s]=%s', number_verified_clients - 1, X1_array[number_verified_clients - 1].reveal())
+            print_ln('X2_array[%s]=%s', number_verified_clients - 1, X2_array[number_verified_clients - 1].reveal())
+            print_ln('X1X2_array[%s]=%s', number_verified_clients - 1, X1X2_array[number_verified_clients - 1].reveal())
+            print_ln('X1X1_array[%s]=%s', number_verified_clients - 1, X1X1_array[number_verified_clients - 1].reveal())
+
+    # 3 最后揭露(reveal)计算结果
+    aggregate_X1 = server_local_computation(number_verified_clients, X1_array)
+    aggregate_X2 = server_local_computation(number_verified_clients, X2_array)
+    aggregate_X1X2 = server_local_computation(number_verified_clients, X1X2_array)
+    aggregate_X1X1 = server_local_computation(number_verified_clients, X1X1_array)
+    c1 = sfix((aggregate_X1X2 - aggregate_X1 * aggregate_X2 / number_verified_clients) / (aggregate_X1X1 - aggregate_X1 * aggregate_X1 / number_verified_clients))
+    c0 = sfix((aggregate_X2 - c1 * aggregate_X1) / number_verified_clients)
+    print_ln('%s clients, %s valid clients, the result of LR:  c0 = %s, c1 = %s', number_clients, number_verified_clients, c0.reveal(), c1.reveal())
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+
+
+
+def LR_run_v2(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array(包括x1_array和x2_array)。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+        
+    server_running_time_start = time.time()            ##############################
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    X = sint.Matrix(number_variants, MAX_NUM_CLIENTS)  # 为方便后续计算，这里矩阵其实是转置
+    Y = sint.Matrix(1, MAX_NUM_CLIENTS) 
+
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2 验证y，计算<x_array>并转成x 
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+
+        @if_(flag)
+        def _():
+            # 将有效的client输入从二进制比特串转为十进制并存入x_array数组
+            x_array = server_LR_sum(y_matrix[client_id], r_matrix[client_id], number_bits, number_variants)
+
+            # 构建矩阵X和Y
+            X[0][number_verified_clients] = 1
+            @for_range(number_variants-1)
+            def _(j):
+                X[j+1][number_verified_clients] = x_array[j]
+            Y[0][number_verified_clients] = x_array[number_variants]
+
+            # 有效client输入数+1
+            number_verified_clients.write(number_verified_clients + 1)
+
+    # 计算XTX和XTY并reveal
+    XTX = X.mul_trans(X)
+    XTY = X.mul_trans(Y)
+
+    ##############################################
+    @for_range(number_variants)
+    def _(i):
+        @for_range(number_variants)
+        def _(j):
+            print_ln('XTX[%s][%s] = %s', i, j, XTX[i][j].reveal())
+
+    XTY = X.mul_trans(Y)
+    @for_range(number_variants)
+    def _(i):
+        print_ln('XTY[%s][0] = %s', i, XTY[i][0].reveal())
+    ##############################################
+    
+
+    
+
+
+    # 3 最后揭露(reveal)计算结果
+    aggregate_X1 = server_local_computation(number_verified_clients, X1_array)
+    aggregate_X2 = server_local_computation(number_verified_clients, X2_array)
+    aggregate_X1X2 = server_local_computation(number_verified_clients, X1X2_array)
+    aggregate_X1X1 = server_local_computation(number_verified_clients, X1X1_array)
+    c1 = sfix((aggregate_X1X2 - aggregate_X1 * aggregate_X2 / number_verified_clients) / (aggregate_X1X1 - aggregate_X1 * aggregate_X1 / number_verified_clients))
+    c0 = sfix((aggregate_X2 - c1 * aggregate_X1) / number_verified_clients)
+    print_ln('%s clients, %s valid clients, the result of LR:  c0 = %s, c1 = %s', number_clients, number_verified_clients, c0.reveal(), c1.reveal())
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+
+def FRQ_run(number_clients, number_verified_clients):
+    # 1 生成r_array，传给客户端，并从客户端接收y_array。最终在各服务器上得到每个客户端的y_array和对应的r_array
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+        
+    server_running_time_start = time.time()            ##############################
+
+    # 2 服务器端本地验证输入y的有效性，并进行本地计算
+    x_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)          # 所有client的x in {0,1}的矩阵
+    tmp_x_array = sint.Array(number_bits)        # 存储验证求和为1前的数组，验证后存入x_matrix
+    @for_range(number_clients)
+    def _(client_id):
+        # 1.2.1 验证y \in {0,1}
+        flag = MemValue(regint(1))
+        @for_range(number_bits)
+        def _(bit_id):
+            print_ln('y_array[%s]=%s', bit_id, y_matrix[client_id][bit_id])
+            @if_(y_matrix[client_id][bit_id] * y_matrix[client_id][bit_id] != 1)
+            def _():
+                print_ln('The %s th bit of the client %s is invalid!', bit_id, client_id)
+                flag.write(regint(0))
+                break_loop()
+
+        # 1.2.2 计算<x_array>并验证每个client的x_array所有元素值之和是否为1
+        
+        @if_(flag)
+        def _():
+            x_array_sum = sint(0)
+            # 将有效的client输入存入x_matrix数组
+            @for_range(number_bits)
+            def _(bit_id):
+                tmp_x_array[bit_id] = (y_matrix[client_id][bit_id] * r_matrix[client_id][bit_id] + 1) / 2
+                x_array_sum.update(x_array_sum + tmp_x_array[bit_id])
+                # print_ln('x_matrix[%s][%s]=%s', number_verified_clients, bit_id, x_matrix[number_verified_clients][bit_id].reveal())
+            # 验证x_array所有元素值之和是否为1
+            @if_e(x_array_sum.reveal() == 1)      #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@这一步要在密文下判断还是明文中判断，明文判断应该容易一些
+            def _():
+                # 存入x_matrix
+                x_matrix[number_verified_clients][:] = tmp_x_array[:]
+                # 有效client输入数+1
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The sum of the x_array of the client %s is %s, which is invalid!', client_id, x_array_sum.reveal())
+
+    # 3 最后揭露(reveal)计算结果
+    # print_ln('%s clients, %s valid clients, the result of VDAF is %s', number_clients, number_verified_clients, aggregate_result.reveal())
+
+    x_sum_array = sint.Array(number_bits)
+    x_sum_array[:] = x_matrix[0][:]
+    @for_range(number_verified_clients -1)
+    def _(client_id):
+        x_sum_array[:] += x_matrix[client_id + 1][:]
+
+    @for_range(number_bits)
+    def _(bit_id):
+        print_ln('The %s th FRQ bit is %s.', bit_id, x_sum_array[bit_id].reveal())
+    print_ln('server running time: %s', time.time() - server_running_time_start)         #############################
+
+def main():
+    """Listen in while loop for players to join a game.
+    Once maxiumum reached or have notified that round finished, run computation and return result."""
+    # Start listening for client socket connections
+    listen_for_clients(PORTNUM)
+    print_ln('Listening for client connections on base port %s', PORTNUM)
+
+
+    def game_loop(_=None):
+        print_ln('Starting a new round of the game.')
+
+        # Clients socket id (integer).
+        client_sockets = Array(MAX_NUM_CLIENTS, regint)           # regint类型的client_id的存储数组
+        # Number of clients
+        number_clients = MemValue(regint(0))
+        # Number of verified clients
+        number_verified_clients = MemValue(regint(0))
+        # Keep track of received inputs
+        seen = Array(MAX_NUM_CLIENTS, regint)
+        seen.assign_all(0)                            # 初始化seen数组值全0
+        # # Number of bits of a certain verified client's value
+        # number_bits = MemValue(regint(8))
+
+        # Loop round waiting for each client to connect
+        @do_while
+        def client_connections():
+            client_id, last = accept_client()         # 从client获取id和对应client值
+            @if_(client_id >= MAX_NUM_CLIENTS)
+            def _():
+                print_ln('client id too high')
+                crash()
+            client_sockets[client_id] = client_id     # regint类型的client_id数组
+            # client_ids[client_id] = client_id       # sint类型的client_id数组
+            seen[client_id] = 1                       # 设置seen=1，用于判断client是否发送完成
+            @if_(last == 1)                           # 第一次client2server的通信，用于确定参与client的数量，完成client的设置
+            def _():
+                number_clients.write(client_id + 1)
+
+            return (sum(seen) < number_clients) + (number_clients == 0)
+
+        SUM_run(number_clients, number_verified_clients)
+
+
+        close_connections(number_clients)
+
+        return True
+
+    if n_rounds > 0:
+        print('run %d rounds' % n_rounds)
+        for_range(n_rounds)(game_loop)
+    else:
+        print('run forever')
+        do_while(game_loop)
+
+main()
+
+
+
+
+"""
+    # servers生成<r_array>并把<R>传递给client_id的客户端, 再从client端接收y_array
+    y_array, r_array = t.receive_from_client_VDAF(number_bits, client_id)
+    print_ln('Finish the receive_from_client_VDAF!!!!!!!')   ############
+    @for_range(number_bits)
+    def _(bit_id):
+        y_matrix[client_id][bit_id] = y_array[bit_id]
+        r_matrix[client_id][bit_id] = r_array[bit_id]
+
+    # servers生成<r_array>并把<R>传递给client_id的客户端, 再从client端接收y_array
+    Y, r_array = t.receive_from_client_VDAF(number_bits, client_id)
+    print_ln('Finish the receive_from_client_VDAF!!!!!!!')   ############
+
+
+        # 第一版十进制Y转二进制y_array的方案，使用长除法
+        @for_range(number_bits)
+        def _(bit_id):
+            @if_e(Y != 0)
+            def _():
+                @if_e(Y - Y // 2 * 2 == 0)
+                def _():
+                    y_matrix[client_id][bit_id] = -1
+                @else_
+                def _():
+                    y_matrix[client_id][bit_id] = 1
+                Y.update(Y // 2)
+            @else_
+            def _():
+                y_matrix[client_id][bit_id] = -1
+            print_ln('Test clinet%s send y_array[%s]=%s', client_id, bit_id, y_matrix[client_id][bit_id])
+
+
+    # 1.1 传输Y，用长除法进行十进制到二进制的转换
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+        print_ln('Enter the for_range_multithread!!!!!!!')   ###########
+        # 1.1 servers生成<r_array>并把<R>传递给client_id的客户端, 再从client端接收y_array
+        Y, r_array = sint.receive_from_client_VDAF(number_bits, client_id)
+        # Y.write(tmp)
+        print_ln('Finish the receive_from_client_VDAF!!!!!!!, Y=%s', Y)   ############
+
+        # 第一版十进制Y转二进制y_array的方案，使用长除法
+        @for_range(number_bits)
+        def _(bit_id):
+            @if_e(Y != 0)
+            def _():
+                @if_e(Y - Y // 2 * 2 == 0)
+                def _():
+                    y_matrix[client_id][bit_id] = -1
+                @else_
+                def _():
+                    y_matrix[client_id][bit_id] = 1
+                Y.update(Y // 2)
+            @else_
+            def _():
+                y_matrix[client_id][bit_id] = -1
+            print_ln('Test clinet%s send y_array[%s]=%s', client_id, bit_id, y_matrix[client_id][bit_id])
+
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+            print_ln('Test clinet%s send r_array[%s]=%s', client_id, bit_id, r_matrix[client_id][bit_id].reveal())
+    
+    # 1.2 传输Y，用按位与进行十进制到二进制的转换
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+        print_ln('Enter the for_range_multithread!!!!!!!')   ###########
+        # 1.1 servers生成<r_array>并把<R>传递给client_id的客户端, 再从client端接收y_array
+        Y, r_array = sint.receive_from_client_VDAF(number_bits, client_id)
+        print_ln('Finish the receive_from_client_VDAF!!!!!!!, Y=%s', Y)   ############
+        
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = (Y & 1) * 2 - 1
+            Y.update(Y >> 1)
+            print_ln('Test clinet%s send y_array[%s]=%s', client_id, bit_id, y_matrix[client_id][bit_id])
+
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+            print_ln('Test clinet%s send r_array[%s]=%s', client_id, bit_id, r_matrix[client_id][bit_id].reveal()) 
+    
+    # 1.3 传输y_array，需要重新定义types.py里的sint里的从client接收输入
+    y_matrix = cint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    r_matrix = sint.Matrix(MAX_NUM_CLIENTS, number_bits)
+    @for_range_multithread(n_threads, 1, number_clients)
+    def _(client_id):
+
+        y_array, r_array = sint.receive_from_client_VDAF2(number_bits, client_id)
+
+        @for_range(number_bits)
+        def _(bit_id):
+            y_matrix[client_id][bit_id] = y_array[bit_id]
+            r_matrix[client_id][bit_id] = r_array[bit_id]
+
+
+
+"""
