@@ -5,16 +5,16 @@ from Compiler.util import if_else
 import time
 
 
-PORTNUM = 14000                        # clinet-server通信的端口
-MAX_NUM_CLIENTS = 1                    # client最多的数量
+PORTNUM = 14000
+MAX_NUM_CLIENTS = 1
 n_rounds = 0  
-n_threads = 1                          # 对于一个客户端100个输入的情况，改成1
-number_inputs = 1000                 # 一个客户端输入的数据个数，正常应该是1，实验使用100000   
-number_variants = 1                    # LR的变量个数
+n_threads = 1
+number_inputs = 1000
+number_variants = 1
 number_bit_LR = 8
-number_bits = 8 * number_variants      # 客户端输入向量的长度
-statistic_name = 'S'                   # SUM  MAX  FRQ  LR
-communication_method = 'S';            # Single：传一个p域数  Multiple：传一串-1，1
+number_bits = 8 * number_variants
+statistic_name = 'S'
+communication_method = 'S';
 
 if len(program.args) > 1:
     n_rounds = int(program.args[1])

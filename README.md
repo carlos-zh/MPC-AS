@@ -18,6 +18,12 @@ This repository includes our realization of MPC-AS, which is a secure MPC protoc
     `sudo apt-get install automake build-essential clang cmake git libboost-dev libboost-thread-dev libgmp-dev libntl-dev libsodium-dev libssl-dev libtool python3`
     For other operating systems, you can follow the instruction of [MP-SPDZ](https://mp-spdz.readthedocs.io/en/latest/).
 
+## Download
+Use --recursive to download corresponding dependencies in ./deps file.
+```
+git clone --recursive https://github.com/carlos-zh/MPC-AS.git
+```
+
 ## Compilation
 
 The SPDZ protocol uses preprocessing, that is, in a first (sometimes called offline) phase correlated randomness is generated independent of the actual inputs of the computation. Only the second (“online”) phase combines this randomness with the actual inputs in order to produce the desired results. The preprocessed data can only be used once, thus more computation requires more preprocessing.
@@ -56,6 +62,7 @@ For the online only benchmarking, you can do the following steps:
     make -j 8 online
     make Fake-Offline.x highgear-party.x
     Scripts/setup-online.sh
+    ./Fake-Offline.x 2 -lgp 48
 
 *   generate the necessary certificates and keys for servers and clients.
 
@@ -68,8 +75,8 @@ For the online only benchmarking, you can do the following steps:
 
 <!---->
 
-    make bankers-bonus-client.x
-    ./compile.py -P 140737488355333 bankers_bonus 1
+    make MPC-AS-client.x
+    ./compile.py -P 140737488355333 MPC-AS 1
 
 ## Running Computation
 
@@ -78,14 +85,17 @@ For the localhost execution, you can do as follows.
 *   online and offline benchmarking
     *   run on one terminal
     <!---->
-        PLAYERS=2 Scripts/highgear.sh bankers_bonus-1
+        PLAYERS=2 Scripts/highgear.sh MPC-AS-1
     *   run on another terminal
     <!---->
-        ./bankers-bonus-client.x 0 2 1
+        ./MPC-AS-client.x 0 2 1
 *   online only benchmarking
     *   run on one terminal
     <!---->
-        PLAYERS=2 Scripts/run-online.sh bankers_bonus-1
+        PLAYERS=2 Scripts/run-online.sh MPC-AS-1
     *   run on another terminal
     <!---->
-        ./bankers-bonus-client.x 0 2 1
+        ./MPC-AS-client.x 0 2 1
+
+
+
