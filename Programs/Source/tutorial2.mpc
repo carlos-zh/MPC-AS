@@ -1,3 +1,0 @@
-a=sint(10)
-b=sint(9)
-a*b

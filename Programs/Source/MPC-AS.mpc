@@ -233,7 +233,6 @@ def LR_run_v2(number_clients, number_verified_clients):
                 for j in range(number_variants - 1):
                     X[j+1][number_verified_clients] = x_array[j]
                 Y[0][number_verified_clients] = x_array[number_variants - 1]
-                # 有效client输入数+1
                 number_verified_clients.write(number_verified_clients + 1)
 
     XTX = X.mul_trans(X)
