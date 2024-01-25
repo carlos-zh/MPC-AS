@@ -18,71 +18,32 @@
 
 
 template<class T, class U>
-void run(vector< vector<double> > salary_value, Client& client)
+void run(vector< vector<int> > salary_value, Client& client)
 {
-    // sint
-    vector< vector<int> > values_SUM(number_inputs, vector<int>(number_variants));
-    vector< vector<int> > values_M(number_inputs, vector<int>(number_variants));
-    vector< vector<int> > values_F(number_inputs, vector<int>(number_variants));
-    vector< vector<int> > values_L(number_inputs, vector<int>(number_variants));
-    vector< vector<int> > values_A(number_inputs, vector<int>(number_variants));
-    vector< vector<int> > values_V(number_inputs, vector<int>(number_variants));
-
     switch(statistic_name)
     {
     case 'S':
-       
-       for (int i = 0; i < number_inputs; i++)
-           for (int j = 0; j < number_variants; j++)
-               values_SUM[i][j] = int(salary_value[i][j]);
-
-       client.send_private_inputs<int>(values_SUM);        // SUM
+       client.send_private_inputs<int>(salary_value);
        break;
     case 'M':
-       
-       for (int i = 0; i < number_inputs; i++)
-           for (int j = 0; j < number_variants; j++)
-               values_M[i][j] = int(salary_value[i][j]);
-       client.send_private_inputs_MAX<int>(values_M);    // MAX
+       client.send_private_inputs_MAX<int>(salary_value);
+       break;
+    case 'm':
+       client.send_private_inputs_MIN<int>(salary_value);
        break;
     case 'F':
-       
-       for (int i = 0; i < number_inputs; i++)
-           for (int j = 0; j < number_variants; j++)
-               values_F[i][j] = int(salary_value[i][j]);
-       if (number_bits <32)
-       {
-            client.send_private_inputs<int>(values_F);
-       }
-       else{
-            client.send_private_inputs_longint<int>(values_F);
-       }
-      // FRQ
+       if (number_bits <32) client.send_private_inputs<int>(salary_value);
+       else client.send_private_inputs_longint<int>(salary_value);
        break;
     case 'L':
-       
-       for (int i = 0; i < number_inputs; i++)
-           for (int j = 0; j < number_variants; j++)
-               values_L[i][j] = int(salary_value[i][j]);
-       client.send_private_inputs_LR<int>(values_L);     // LR
+       client.send_private_inputs_LR<int>(salary_value);
        break;
     case 'A':
-
-        for (int i = 0; i < number_inputs; i++)
-            for (int j = 0; j < number_variants; j++)
-                values_A[i][j] = int(salary_value[i][j]);
-        values_A[0][0] = 0;
-        client.send_private_inputs_AND<int>(values_A);    
+        client.send_private_inputs_AND<int>(salary_value);    
         break;
     case 'V':
-
-        for (int i = 0; i < number_inputs; i++)
-            for (int j = 0; j < number_variants; j++)
-                values_V[i][j] = int(salary_value[i][j]);
-        values_V[0][0] = 2;
-        client.send_private_inputs<int>(values_V);    
+        client.send_private_inputs<int>(salary_value);    
         break;
-    
     default:
        break;
     }
@@ -98,7 +59,7 @@ int main(int argc, char** argv)
     int nparties;
     int finish;
     int port_base = 14000;
-    vector< vector<double> > salary_value(number_inputs, vector<double>(number_variants));
+    vector< vector<int> > salary_value(number_inputs, vector<int>(number_variants));
 
     if (argc < 4) {
         cout << "Usage is bankers-bonus-client <client identifier> <number of spdz parties> "
@@ -111,16 +72,50 @@ int main(int argc, char** argv)
     nparties = atoi(argv[2]);
     finish = atoi(argv[3]);
 
-    for (int i = 0; i < number_inputs; i++)
-    {
-        for (int j = 0; j < number_variants; j++)
-        {
-            if (statistic_name == 'L')
-                salary_value[i][j] = j;
-            else
-                salary_value[i][j] = 1;
+
+    // dataset input
+    string file_path = "./Datasets/";
+    string file_name;
+
+    if (statistic_name == 'S' || statistic_name == 'V') 
+        file_name = file_path + statistic_name + "_" + to_string(int(pow(2, number_bits))) + "_" + isValid + ".txt";
+    else if (statistic_name == 'M' || statistic_name == 'F')
+        file_name = file_path + statistic_name + "_" + to_string(number_bits) + "_" + isValid + ".txt";
+    else
+        file_name = file_path + statistic_name + "_" + to_string(number_variants) + "_" + isValid + ".txt";
+    
+    cout << "Client inputs read from " << file_name << endl;
+    std::ifstream ifs(file_name);
+    std::string line;
+
+    if (!ifs.is_open()) {
+        throw std::runtime_error("Failed to read " + file_name);
+    }
+    // std::cout << file_name << endl;
+
+    for (int i = 0; i < number_inputs; i++){
+        std::getline(ifs, line);
+        std::istringstream ls(line);
+        std::string s;
+        for (int j = 0; j < number_variants; j++) {
+            ls >> s;
+            salary_value[i][j] = std::stoi(s);
         }
     }
+
+    // // dataset input (test)
+    // for (int i = 0; i < number_inputs; i++)
+    // {
+    //     for (int j = 0; j < number_variants; j++)
+    //     {
+    //         if (statistic_name == 'L')        
+    //             salary_value[i][j] = j;
+    //         else
+    //             salary_value[i][j] = 1;
+    //     }
+    // }
+    // // salary_value[0][0] = 0;
+
 
     vector<string> hostnames(nparties, "localhost");
     if (argc > 4)

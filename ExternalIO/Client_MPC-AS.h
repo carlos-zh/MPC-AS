@@ -5,9 +5,10 @@
 
 const char statistic_name = 'S';                 // 聚合统计量
 const int number_variants = 1;                   // 一个数据中元素的个数（除了LR之外，都是1）
-const int number_bits = 8 * number_variants;    // 编码位数
-const int number_inputs = 1000;                    // 一个客户端持有的数据个数
+const int number_bits = 8 * number_variants;     // 编码位数
+const int number_inputs = 100000;                // 一个客户端持有的数据个数
 const char communication_method = 'S';           // 通信方式，传一个(Single)p域数字，传多个(Multiple){-1,1}的数字
+const char isValid = 'Y';                        // Y: valid  N: invalid
 
 #ifdef NO_CLIENT_TLS
 
@@ -87,23 +88,21 @@ public:
      * @param values vector of integer-like values
      */
     template<class T>
-    // void send_private_inputs(const vector<T>& values);
     void send_private_inputs(const vector< vector<T> >& values);
 
     template<class T>
-    // void send_private_inputs(const vector<T>& values);
     void send_private_inputs_longint(const vector< vector<T> >& values);
 
     template<class T>
-    // void send_private_inputs_LR(const vector<T>& values);
     void send_private_inputs_LR(const vector< vector<T> >& values);
 
     template<class T>
-    // void send_private_inputs_MAX(const vector<T>& values);
     void send_private_inputs_MAX(const vector< vector<T> >& values);
 
     template<class T>
-    // void send_private_inputs_MAX(const vector<T>& values);
+    void send_private_inputs_MIN(const vector< vector<T> >& values);
+
+    template<class T>
     void send_private_inputs_AND(const vector< vector<T> >& values);
 
 };

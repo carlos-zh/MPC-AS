@@ -111,9 +111,9 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
     vector<T> r_array(number_bits);
 
     int mask_bit;
-    vector<T> x_array(number_bits, -1);
     for (int i = 0; i < num_inputs; i++)
     {
+        vector<T> x_array(number_bits, -1);
         mask_bit = 1 << 0;
         tmp_value = triples[i][2];
         for (int b = 0; b < number_bits; b++)
@@ -132,7 +132,7 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
         {
             mask_bit = 1;
             middle_value = values[i][0];
-            for (int b = 0; b < number_bits; b++)
+            for (int b = 0; b < number_bits - 1; b++)
             {
                 middle_value2 = middle_value;
                 middle_value2 &= mask_bit;
@@ -147,6 +147,8 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
                 
                 mask_bit <<= 1;
             }
+            x_array[number_bits - 1] = (middle_value >> (number_bits - 1)) * 2 - 1;
+
             break;
         }
 
@@ -155,7 +157,7 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
         {
             mask_bit = 1;
             middle_value = values[i][0];
-            for (int b = 0; b < number_bits; b++)
+            for (int b = 0; b < number_bits - 1; b++)
             {
                 middle_value2 = middle_value;
                 middle_value2 &= mask_bit;
@@ -170,6 +172,7 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
                 
                 mask_bit <<= 1;
             }
+            x_array[number_bits - 1] = (middle_value >> (number_bits - 1)) * 2 - 1;
             break;
         }
 
@@ -177,9 +180,16 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
         case 'F':
         {
             middle_value = values[i][0];
-            x_array[middle_value] =1;
+            if (middle_value >= number_bits) {
+                x_array[number_bits - 2] = 1;
+                x_array[number_bits - 1] = 1;
+            }
+            else {
+                x_array[middle_value] = 1;
+            }
+
             break;
-        }      
+        }
 
         default:
             cerr << "Statistic name " << statistic_name << " not implemented";
@@ -193,7 +203,7 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
             tmp_pow = 1;
             for (int j = 0; j < number_bits; j++)
             {
-                y += (r_array[j] * x_array[j] + 1)/2  * tmp_pow;
+                y += (r_array[j] * x_array[j] + 1) / 2  * tmp_pow;
                 tmp_pow = tmp_pow * 2;
             }
 
@@ -288,9 +298,10 @@ void Client::send_private_inputs_longint(const vector< vector<T> >& values)
     T middle_value, middle_value2, tmp_pow, middle_y;
     vector<T> r_array(number_bits);
     int mask_bit;
-    vector<T> x_array(number_bits, -1);
+    
     for (int i = 0; i < num_inputs; i++)
     {
+        vector<T> x_array(number_bits, -1);
         mask_bit = 1<<0;
         tmp_value = triples[i][2];
         for (int b = 0; b < 31; b++)
@@ -313,7 +324,7 @@ void Client::send_private_inputs_longint(const vector< vector<T> >& values)
         case 'S':
         {
             middle_value = values[i][0];
-            for (int b = 0; b < number_bits; b++)
+            for (int b = 0; b < number_bits-1; b++)
             {
                 middle_value2 = middle_value;
                 middle_value2 &= 1;
@@ -327,14 +338,21 @@ void Client::send_private_inputs_longint(const vector< vector<T> >& values)
                 }
                 
                 middle_value >>= 1;
+
             }
+            x_array[number_bits - 1] = 2 * middle_value - 1;
             break;
         }
         // FRQ
         case 'F':
         {
             middle_value = values[i][0];
-            x_array[middle_value] =1;
+            if (middle_value >= number_bits) {
+                x_array[number_bits - 2] = 1;
+                x_array[number_bits - 1] = 1;
+            }
+            else
+                x_array[middle_value] = 1;
             break;
         }      
 
@@ -480,7 +498,7 @@ void Client::send_private_inputs_LR(const vector< vector<T> >& values)
         {
 
             middle_value = values[i][j];
-            for (int b = j * number_bits / number_variants; b < (j + 1) * number_bits / number_variants; b++)
+            for (int b = j * number_bits / number_variants; b < (j + 1) * number_bits / number_variants - 1; b++)
             {
                 middle_value2 = middle_value;
                 middle_value2 &= 1;
@@ -494,9 +512,10 @@ void Client::send_private_inputs_LR(const vector< vector<T> >& values)
                 }
                 
                 middle_value >>= 1;
-            }   
-
+            }
+            x_array[(j + 1) * number_bits / number_variants - 1] = middle_value * 2 - 1;
         }
+
 
         if (communication_method == 'S')
         {
@@ -622,6 +641,95 @@ void Client::send_private_inputs_MAX(const vector< vector<T> >& values)
 
 }
 
+
+// MIN
+template<class T>
+void Client::send_private_inputs_MIN(const vector< vector<T> >& values)
+{
+    int num_inputs = values.size();
+    if (num_inputs != number_inputs)
+        throw runtime_error("num_inputs != number_inputs");
+    octetStream os;
+    vector< vector<gfp> > triples(number_inputs * number_bits, vector<gfp>(3));   
+    vector<gfp> triple_shares(3);
+    bool active = true;
+
+    // Receive num_inputs triples from SPDZ
+    for (size_t j = 0; j < sockets.size(); j++)
+    {
+#ifdef VERBOSE_COMM
+        cerr << "receiving from " << j << endl << flush;
+#endif
+
+        os.reset_write_head();
+        os.Receive(sockets[j]);
+
+#ifdef VERBOSE_COMM
+        cerr << "received " << os.get_length() << " from " << j << endl << flush;
+#endif
+
+        if (j == 0)
+        {
+            if (int(os.get_length()) == 3 * number_inputs * number_bits * gfp::size())
+                active = true;
+            else
+                active = false;
+        }
+
+        int n_expected = active ? 3 : 1;
+        if (int(os.get_length()) != n_expected * gfp::size() * number_inputs * number_bits)
+            throw runtime_error("unexpected data length in sending");
+
+        for (int j = 0; j < number_inputs * number_bits; j++)
+        {
+            for (int k = 0; k < n_expected; k++)
+            {
+                triple_shares[k].unpack(os);
+                triples[j][k] += triple_shares[k];
+            }
+        }
+    }
+
+    clock_t start, end;
+    start = clock();
+
+    if (active)
+        // Check triple relations (is a party cheating?)
+        for (int i = 0; i < number_inputs * number_bits; i++)
+        {
+            if (triples[i][0] * triples[i][1] != triples[i][2])
+            {
+                cerr << triples[i][2] << " != " << triples[i][0] << " * " << triples[i][1] << endl;
+                cerr << "Incorrect triple at " << i << ", aborting\n";
+                throw mac_fail();
+            }
+        }
+
+    os.reset_write_head();
+    gfp y;
+    for (int i = 0; i < number_inputs; i++)
+    {
+        srand((unsigned)time(NULL));
+        for (int j = 0; j <= values[i][0]; j++)
+        {
+            y = triples[i * number_bits + j][0];
+            y.pack(os);
+        }
+
+        for (int j = values[i][0] + 1; j < number_bits; j++)
+        {
+            y = triples[i * number_bits + j][0] + rand();
+            y.pack(os);
+        }
+    }
+
+    for (auto& socket : sockets)
+        os.Send(socket);
+    
+    end = clock();                                                                
+    cout<< "client running time = " << double(end - start) / CLOCKS_PER_SEC << "s" << endl;
+
+}
 
 // AND
 template<class T>
