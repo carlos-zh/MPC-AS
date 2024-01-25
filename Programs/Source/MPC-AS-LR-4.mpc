@@ -1,0 +1,422 @@
+from Compiler.types import sint, regint, Array, MemValue, cfix
+from Compiler.types import compute_inverse, get_time
+from Compiler.library import print_ln, do_while, for_range
+from Compiler.util import if_else
+import time
+
+
+PORTNUM = 14000
+MAX_NUM_CLIENTS = 1
+n_rounds = 0  
+n_threads = 1
+number_inputs = 100000
+number_variants = 4
+number_bit_LR = 8
+number_bits = 8 * number_variants
+statistic_name = 'L'
+communication_method = 'S'
+
+
+if len(program.args) > 1:
+    n_rounds = int(program.args[1])
+
+if len(program.args) > 2:
+    program.active = bool(int(program.args[2]))
+
+def accept_client():
+    client_socket_id = accept_client_connection(PORTNUM)
+    last = regint.read_from_socket(client_socket_id)
+    return client_socket_id, last
+
+def close_connections(number_clients):
+    @for_range(number_clients)
+    def _(i):
+        closeclientconnection(i)
+
+def MAX_run_v2(number_clients, number_verified_clients):
+    # Damgård et al. <http://eprint.iacr.org/2015/1006>
+    received_matrix, x_matrix, active = sint.receive_from_client_MAX(number_inputs, number_bits, regint(0))
+
+    start_timer(1)
+    x_matrix.iadd(received_matrix)
+    x_sum_array = sint.Array(number_bits)
+    x_sum_array[:] = x_matrix[0][:]
+    @for_range(number_inputs - 1)
+    def _(id):
+        x_sum_array[:] += x_matrix[id + 1][:]
+    x_sum_array_cint = x_sum_array.reveal()
+    @for_range(number_bits)
+    def _(bit_id):
+        @if_(x_sum_array_cint[number_bits - 1 - bit_id] != 0)
+        def _():                                                           
+            print_ln('The result of MAX is %s.', number_bits - 1 - bit_id)
+            break_loop()
+        @if_(bit_id == number_bits - 1)
+        def _():
+            print_ln('The result of MAX is %s.', 0)    
+
+    stop_timer(1)
+
+def MIN_run(number_clients, number_verified_clients):
+    received_matrix, x_matrix, active = sint.receive_from_client_MAX(number_inputs, number_bits, regint(0))
+
+    start_timer(1)
+    x_matrix.iadd(received_matrix)
+    x_sum_array = sint.Array(number_bits)
+    x_sum_array[:] = x_matrix[0][:]
+    @for_range(number_inputs - 1)
+    def _(id):
+        x_sum_array[:] += x_matrix[id + 1][:]
+    x_sum_array_cint = x_sum_array.reveal()
+    @for_range(number_bits)
+    def _(bit_id):
+        @if_(x_sum_array_cint[bit_id] != 0)
+        def _():                                                           
+            print_ln('The result of MIN is %s.', bit_id - 1)
+            break_loop()
+        @if_(bit_id == number_bits - 1)
+        def _():
+            print_ln('The result of MIN is %s.', number_bits - 1)
+
+    stop_timer(1)
+
+
+
+def AND_run(number_clients, number_verified_clients):
+    received_array, x_array = sint.receive_from_client_AND(number_inputs, regint(0))
+
+    start_timer(1)
+    @for_range(number_inputs)
+    def _(i):
+        x_array[i] += received_array[i]
+
+    x_sum_array = sint.Array(1)
+    x_sum_array[0] = x_array[0]
+    @for_range(number_inputs - 1)
+    def _(id):
+        x_sum_array[0] += x_array[id + 1]
+    x_sum_array_cint = x_sum_array[0].reveal()
+
+    @if_e(x_sum_array_cint != 0)
+    def _():                                                           
+        print_ln('The result of AND is 0.')
+    @else_
+    def _():
+        print_ln('The result of AND is 1.')                                                                            
+    stop_timer(1)
+    
+
+def SUM_run(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix  = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+        start_timer(1)
+        list_id = cint(0)
+        for input_id in range(number_inputs):
+            # perform binary decomposition
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            middle_index = input_id * number_bits
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        start_timer(1)
+
+    else:
+        print_ln('unexpected communication method!')
+    aggregate_result = sint.Array(1)
+    aggregate_result[0] = 0
+    X_array = sint.Array(number_inputs)
+    decision = 2 ** number_bits
+
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = 1
+            flag = (Y_array[input_id] < decision) * (Y_array[input_id] >= 0)
+
+            @if_e(flag)
+            def _():
+                middle = 0
+                middle_p = 1
+                for bit_id in range(number_bits):
+                    middle += middle_p * (y_matrix[input_id][bit_id] * r_matrix[input_id][bit_id] + 1)
+                    middle_p *= 2
+                X_array[number_verified_clients] = middle
+                aggregate_result[0] += middle
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+    aggregate_result[0] = aggregate_result[0] / 2
+    print_ln('%s valid inputs, the result of SUM is %s', number_verified_clients, aggregate_result.reveal())
+    stop_timer(1)   
+
+
+def VAR_run(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+        start_timer(1)
+        list_id = cint(0)
+        for input_id in range(number_inputs):
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            middle_index = input_id * number_bits
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+        
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        start_timer(1)
+
+    else:
+        print_ln('unexpected communication method!')
+    
+    aggregate_result = sint.Array(1)
+    aggregate_result[0] = 0
+    aggregate_result2 = sint.Array(1)
+    aggregate_result2[0] = 0
+
+    X_matrix = sint.Matrix(number_inputs,1)     
+    X2_matrix = sint.Matrix(number_inputs,1)        
+
+    decision = 2 ** number_bits
+
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = 1
+            flag = (Y_array[input_id] < decision) * (Y_array[input_id] >= 0)
+            
+            @if_e(flag)
+            def _():
+                middle = 0
+                middle_p = 1
+                for bit_id in range(number_bits):
+                    middle += middle_p * (y_matrix[input_id][bit_id] * r_matrix[input_id][bit_id] + 1)
+                    middle_p *= 2
+                X_matrix[number_verified_clients][0] = middle
+                aggregate_result[0] += middle
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+    X2_matrix = X_matrix.schur(X_matrix)
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            aggregate_result2[0] += X2_matrix[input_id][0]
+
+
+    aggregate_result[0] = aggregate_result[0] / 2
+    aggregate_result2[0] = aggregate_result2[0] / 4
+    a1 = cfix(aggregate_result[0].reveal())
+    a2 = cfix(aggregate_result2[0].reveal())
+    print_ln('The sum of X is %s, the sum of X^2 is %s', a1, a2)
+
+    finnal_result = a2 / number_verified_clients - (a1 / number_verified_clients) ** 2
+    print_ln('%s valid clients, the result of VAR is %s', number_verified_clients, finnal_result)
+    stop_timer(1)
+
+
+def LR_run_v2(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+        start_timer(1)
+        @for_range(number_inputs)
+        def _(input_id):
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        # server_running_time_start = time.time()
+        start_timer(1)
+    else:
+        print_ln('unexpected communication method!')
+
+    X = sint.Matrix(number_variants, number_inputs)
+    Y = sint.Matrix(1, number_inputs) 
+    decision = 2 ** number_bits
+    number_verified_clients.write(0)
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = 1
+            flag = (Y_array[input_id] < decision) * (Y_array[input_id] >= 0)
+            @if_e(flag)
+            def _():
+                X[0][number_verified_clients] = 2
+                x_array = Array(number_variants, sint)
+                y_array = y_matrix[input_id]
+                r_array = r_matrix[input_id]
+                for i in range(number_variants):
+                    x_array[i] = 0
+                    for j in range(number_bit_LR):
+                        x_array[i] += 2 ** j * (y_array[i * number_bit_LR + j] * r_array[i * number_bit_LR + j] + 1)
+                for j in range(number_variants - 1):
+                    X[j+1][number_verified_clients] = x_array[j]
+                Y[0][number_verified_clients] = x_array[number_variants - 1]
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+
+    XTX = X.mul_trans(X)
+    XTY = X.mul_trans(Y)
+
+    XTX_cfix = cfix.Matrix(number_variants, number_variants)
+    XTY_cfix = cfix.Matrix(number_variants, 1)
+
+    @for_range(number_variants)
+    def _(i):
+        XTX_cfix[i][i] = XTX[i][i].reveal() / 4
+        # print_ln('XTX_cfix[%s][%s] = %s', i, i, XTX_cfix[i][i])        
+        @for_range(number_variants - i - 1)
+        def _(j):
+            XTX_cfix[i][i + j + 1] = XTX[i][i + j + 1].reveal() / 4
+            XTX_cfix[i + j + 1][i] = XTX_cfix[i][i + j + 1]
+            # print_ln('XTX_cfix[%s][%s] = %s', i, i + j + 1, XTX_cfix[i][i + j + 1])
+    
+    @for_range(number_variants)
+    def _(i):
+        XTY_cfix[i][0] = XTY[i][0].reveal() / 4
+        # print_ln('XTY[%s][%s] = %s', i, 0, XTY_cfix[i][0])
+
+    XTX_inverse = compute_inverse(XTX_cfix, number_variants)
+    result = XTX_inverse * XTY_cfix
+
+    print_ln('%s valid clients, the coefficients of the fitted linear regression model: ', number_verified_clients)
+    @for_range(number_variants)
+    def _(i):
+        print_ln('a%s = %s', i, result[i][0])
+
+    stop_timer(1)
+
+
+def FRQ_run(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+
+        start_timer(1)
+        @for_range(number_inputs)
+        def _(input_id):
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        start_timer(1)
+    else:
+        print_ln('unexpected communication method!')
+             
+    x_matrix = sint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+    tmp_x_array = sint.Array(number_bits)
+    decision = 2 ** number_bits
+    sum_flag_array = sint.Array(number_inputs)
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = (Y_array[input_id] < decision)
+            @if_e(flag)
+            def _():
+                middle_sum = sint(0)
+                for bit_id in range(number_bits):
+                    middle_x = (y_matrix[input_id][bit_id] * r_matrix[input_id][bit_id] + 1)
+                    tmp_x_array[bit_id] = middle_x
+                    middle_sum = middle_sum + middle_x
+                sum_flag_array[number_verified_clients] = middle_sum
+                x_matrix[number_verified_clients][:] = tmp_x_array[:]
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+    sum_flag_array_reveal = sum_flag_array.reveal()
+
+    x_sum_array = sint.Array(number_bits)
+    @for_range(number_verified_clients)
+    def _(client_id):
+        @if_e(sum_flag_array_reveal[client_id] == 2)
+        def _():
+            x_sum_array[:] += x_matrix[client_id][:]
+        @else_
+        def _():
+            print_ln('The %s th input is invalid!', client_id + 1)
+
+    x_sum_array_reveal = x_sum_array.reveal()
+    @for_range(number_bits)
+    def _(bit_id):
+        print_ln('The FRQ of %s is %s.', bit_id, x_sum_array_reveal[bit_id] / 2)
+    stop_timer(1)
+
+
+def main():
+    # Start listening for client socket connections
+    listen_for_clients(PORTNUM)
+    print_ln('Listening for client connections on base port %s', PORTNUM)
+
+    def game_loop(_=None):
+        print_ln('Starting a new round of the computation.')
+        # Clients socket id (integer).
+        client_sockets = Array(MAX_NUM_CLIENTS, regint)
+        # Number of clients
+        number_clients = MemValue(regint(0))
+        # Number of verified clients
+        number_verified_clients = MemValue(regint(0))
+        # Keep track of received inputs
+        seen = Array(MAX_NUM_CLIENTS, regint)
+        seen.assign_all(0)
+
+        # Loop round waiting for each client to connect
+        @do_while
+        def client_connections():
+            client_id, last = accept_client()
+            @if_(client_id >= MAX_NUM_CLIENTS)
+            def _():
+                print_ln('client id too high')
+                crash()
+            client_sockets[client_id] = client_id
+            # client_ids[client_id] = client_id
+            seen[client_id] = 1
+            @if_(last == 1)
+            def _():
+                number_clients.write(client_id + 1)
+            return (sum(seen) < number_clients) + (number_clients == 0)
+
+        if statistic_name == 'S':
+            SUM_run(number_clients, number_verified_clients)
+        elif statistic_name == 'M':
+            MAX_run_v2(number_clients, number_verified_clients)
+        elif statistic_name == 'm':
+            MIN_run(number_clients, number_verified_clients)
+        elif statistic_name == 'F':
+            FRQ_run(number_clients, number_verified_clients)
+        elif statistic_name == 'L':
+            LR_run_v2(number_clients, number_verified_clients)
+        elif statistic_name == 'A':
+            AND_run(number_clients, number_verified_clients)
+        elif statistic_name == 'V':
+            VAR_run(number_clients, number_verified_clients)
+        else:
+            return False
+
+        close_connections(number_clients)
+
+        return True
+
+    if n_rounds > 0:
+        print('run %d rounds' % n_rounds)
+        for_range(n_rounds)(game_loop)
+    else:
+        print('run forever')
+        do_while(game_loop)
+
+main()
