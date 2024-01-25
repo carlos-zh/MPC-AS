@@ -3,11 +3,11 @@
 
 #include "Networking/ssl_sockets.h"
 
-const char statistic_name = 'S';                 // 聚合统计量
-const int number_variants = 1;                   // 一个数据中元素的个数（除了LR之外，都是1）
-const int number_bits = 8 * number_variants;     // 编码位数
-const int number_inputs = 100000;                // 一个客户端持有的数据个数
-const char communication_method = 'S';           // 通信方式，传一个(Single)p域数字，传多个(Multiple){-1,1}的数字
+const char statistic_name = 'S';                 // statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR
+const int number_variants = 1;                   // the number of values for each client
+const int number_bits = 8 * number_variants;     // encoding bit length
+const int number_inputs = 100000;                // the number of client inputs
+const char communication_method = 'S';
 const char isValid = 'Y';                        // Y: valid  N: invalid
 
 #ifdef NO_CLIENT_TLS

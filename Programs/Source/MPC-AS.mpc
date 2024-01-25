@@ -9,11 +9,11 @@ PORTNUM = 14000
 MAX_NUM_CLIENTS = 1
 n_rounds = 0  
 n_threads = 1
-number_inputs = 100000
-number_variants = 1
+number_inputs = 100000                 // the number of client inputs
+number_variants = 1                    // the number of values for each client
 number_bit_LR = 8
-number_bits = 8 * number_variants
-statistic_name = 'S'
+number_bits = 8 * number_variants      // encoding bit length
+statistic_name = 'S'                   // statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR, E-MEAN
 communication_method = 'S'
 
 if len(program.args) > 1:
@@ -152,6 +152,57 @@ def SUM_run(number_clients, number_verified_clients):
     aggregate_result[0] = aggregate_result[0] / 2
     print_ln('%s valid inputs, the result of SUM is %s', number_verified_clients, aggregate_result.reveal())
     stop_timer(1)   
+
+
+def MEAN_run(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix  = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+        start_timer(1)
+        list_id = cint(0)
+        for input_id in range(number_inputs):
+            # perform binary decomposition
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            middle_index = input_id * number_bits
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        start_timer(1)
+
+    else:
+        print_ln('unexpected communication method!')
+    aggregate_result = sint.Array(1)
+    aggregate_result[0] = 0
+    X_array = sint.Array(number_inputs)
+    decision = 2 ** number_bits
+
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = 1
+            flag = (Y_array[input_id] < decision) * (Y_array[input_id] >= 0)
+
+            @if_e(flag)
+            def _():
+                middle = 0
+                middle_p = 1
+                for bit_id in range(number_bits):
+                    middle += middle_p * (y_matrix[input_id][bit_id] * r_matrix[input_id][bit_id] + 1)
+                    middle_p *= 2
+                X_array[number_verified_clients] = middle
+                aggregate_result[0] += middle
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+    aggregate_result[0] = aggregate_result[0] / 2
+    result = cfix(aggregate_result[0].reveal()) / number_verified_clients
+    print_ln('%s valid inputs, the result of MEAN is %s', number_verified_clients, result)
+    stop_timer(1)   
+
 
 
 def VAR_run(number_clients, number_verified_clients):
@@ -404,6 +455,8 @@ def main():
             AND_run(number_clients, number_verified_clients)
         elif statistic_name == 'V':
             VAR_run(number_clients, number_verified_clients)
+        elif statistic_name == 'E':
+            MEAN_run(number_clients, number_verified_clients)
         else:
             return False
 
