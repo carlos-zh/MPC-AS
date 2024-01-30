@@ -34,7 +34,6 @@ def close_connections(number_clients):
         closeclientconnection(i)
 
 def MAX_run_v2(number_clients, number_verified_clients):
-    # Damgård et al. <http://eprint.iacr.org/2015/1006>
     received_matrix, x_matrix, active = sint.receive_from_client_MAX(number_inputs, number_bits, regint(0))
 
     start_timer(1)
@@ -151,8 +150,61 @@ def SUM_run(number_clients, number_verified_clients):
             def _():
                 print_ln('The %s th input is invalid!', input_id + 1)
     aggregate_result[0] = aggregate_result[0] / 2
-    print_ln('%s valid inputs, the result of SUM is %s', number_verified_clients, aggregate_result.reveal())
+    print_ln('%s valid inputs, the result of SUM is %s.', number_verified_clients, aggregate_result.reveal())
     stop_timer(1)   
+
+
+def MEAN_run(number_clients, number_verified_clients):
+    if communication_method == 'S':
+        y_matrix = cint.Matrix(MAX_NUM_CLIENTS * number_inputs, number_bits)
+        Y_array, r_matrix  = sint.receive_from_client_Single(number_inputs, number_bits, regint(0))
+        start_timer(1)
+        list_id = cint(0)
+        for input_id in range(number_inputs):
+            # perform binary decomposition
+            Y_list = Y_array[input_id].bit_decompose(bit_length = number_bits)
+            middle_index = input_id * number_bits
+            for bit_id in range(number_bits):
+                y_matrix[input_id][bit_id] = Y_list[bit_id] * 2 - 1
+
+    elif communication_method == 'M':
+        y_matrix, r_matrix = sint.receive_from_client_Multiple(number_inputs, number_bits, regint(0))
+        start_timer(1)
+
+    else:
+        print_ln('unexpected communication method!')
+    aggregate_result = sint.Array(1)
+    aggregate_result[0] = 0
+    X_array = sint.Array(number_inputs)
+    decision = 2 ** number_bits
+
+    @for_range(number_clients)
+    def _(client_id):
+        @for_range(number_inputs)
+        def _(input_id):
+            flag = 1
+            flag = (Y_array[input_id] < decision) * (Y_array[input_id] >= 0)
+
+            @if_e(flag)
+            def _():
+                middle = 0
+                middle_p = 1
+                for bit_id in range(number_bits):
+                    middle += middle_p * (y_matrix[input_id][bit_id] * r_matrix[input_id][bit_id] + 1)
+                    middle_p *= 2
+                X_array[number_verified_clients] = middle
+                aggregate_result[0] += middle
+                number_verified_clients.write(number_verified_clients + 1)
+            @else_
+            def _():
+                print_ln('The %s th input is invalid!', input_id + 1)
+    aggregate_result[0] = aggregate_result[0] / 2
+    print_ln('The result of SUM is %s', aggregate_result[0])
+    # result = cfix(aggregate_result[0].reveal()) / number_verified_clients
+    # print_ln('%s valid inputs, the result of MEAN is %s', number_verified_clients, result)
+    print_ln('%s valid inputs, the result of MEAN can be calculated by the value of SUM and the number of valid inputs.', number_verified_clients)
+    stop_timer(1)   
+
 
 
 def VAR_run(number_clients, number_verified_clients):
@@ -214,12 +266,13 @@ def VAR_run(number_clients, number_verified_clients):
 
     aggregate_result[0] = aggregate_result[0] / 2
     aggregate_result2[0] = aggregate_result2[0] / 4
-    a1 = cfix(aggregate_result[0].reveal())
-    a2 = cfix(aggregate_result2[0].reveal())
+    a1 = aggregate_result[0].reveal()
+    a2 = aggregate_result2[0].reveal()
     print_ln('The sum of X is %s, the sum of X^2 is %s', a1, a2)
-
-    finnal_result = a2 / number_verified_clients - (a1 / number_verified_clients) ** 2
-    print_ln('%s valid clients, the result of VAR is %s', number_verified_clients, finnal_result)
+    tmp = a2 * number_verified_clients - a1 ** 2
+    # finnal_result = cfix(tmp / (number_verified_clients ** 2))
+    # print_ln('%s valid clients, the result of VAR is %s', number_verified_clients, finnal_result)
+    print_ln('%s valid inputs, the result of VAR can be calculated by the value of the sum (i.e. X) and sum of squares (i.e. X^2).', number_verified_clients)
     stop_timer(1)
 
 
@@ -277,26 +330,28 @@ def LR_run_v2(number_clients, number_verified_clients):
     @for_range(number_variants)
     def _(i):
         XTX_cfix[i][i] = XTX[i][i].reveal() / 4
-        # print_ln('XTX_cfix[%s][%s] = %s', i, i, XTX_cfix[i][i])        
+        print_ln('XTX[%s][%s] = %s', i, i, XTX_cfix[i][i])        
         @for_range(number_variants - i - 1)
         def _(j):
             XTX_cfix[i][i + j + 1] = XTX[i][i + j + 1].reveal() / 4
             XTX_cfix[i + j + 1][i] = XTX_cfix[i][i + j + 1]
-            # print_ln('XTX_cfix[%s][%s] = %s', i, i + j + 1, XTX_cfix[i][i + j + 1])
+            print_ln('XTX[%s][%s] = %s', i, i + j + 1, XTX_cfix[i][i + j + 1])
+            print_ln('XTX[%s][%s] = %s', i + j + 1, i, XTX_cfix[i + j + 1][i])
     
     @for_range(number_variants)
     def _(i):
         XTY_cfix[i][0] = XTY[i][0].reveal() / 4
-        # print_ln('XTY[%s][%s] = %s', i, 0, XTY_cfix[i][0])
+        print_ln('XTY[%s][%s] = %s', i, 0, XTY_cfix[i][0])
 
     XTX_inverse = compute_inverse(XTX_cfix, number_variants)
     result = XTX_inverse * XTY_cfix
 
-    print_ln('%s valid clients, the coefficients of the fitted linear regression model: ', number_verified_clients)
-    @for_range(number_variants)
-    def _(i):
-        print_ln('a%s = %s', i, result[i][0])
+    # print_ln('%s valid clients, the coefficients of the fitted linear regression model: ', number_verified_clients)
+    # @for_range(number_variants)
+    # def _(i):
+    #     print_ln('a%s = %s', i, result[i][0])
 
+    print_ln('%s valid inputs, the result of LR can be calculated by the multiplication of the inverse of XTX and XTY.', number_verified_clients)
     stop_timer(1)
 
 
@@ -405,6 +460,8 @@ def main():
             AND_run(number_clients, number_verified_clients)
         elif statistic_name == 'V':
             VAR_run(number_clients, number_verified_clients)
+        elif statistic_name == 'E':
+            MEAN_run(number_clients, number_verified_clients)
         else:
             return False
 

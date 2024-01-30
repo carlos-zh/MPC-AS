@@ -3,12 +3,12 @@
 
 #include "Networking/ssl_sockets.h"
 
-const char statistic_name = 'S';                 // statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR
-const int number_variants = 1;                   // the number of values for each client
-const int number_bits = 8 * number_variants;     // encoding bit length
-const int number_inputs = 100000;                // the number of client inputs
-const char communication_method = 'S';
-const char isValid = 'Y';                        // Y: valid  N: invalid
+char statistic_name = 'L';                 // statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR
+int number_variants = 5;                   // the number of values for each client
+int number_bits = 8 * number_variants;     // encoding bit length
+int number_inputs = 100000;                // the number of client inputs
+char communication_method = 'S';
+char isValid = 'Y';                        // Y: valid  N: invalid
 
 #ifdef NO_CLIENT_TLS
 

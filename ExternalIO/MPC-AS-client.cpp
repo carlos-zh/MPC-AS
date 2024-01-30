@@ -24,6 +24,7 @@ void run(vector< vector<int> > salary_value, Client& client)
     {
     case 'S':
        client.send_private_inputs<int>(salary_value);
+       cout << "S" << endl;
        break;
     case 'M':
        client.send_private_inputs_MAX<int>(salary_value);
@@ -61,9 +62,9 @@ int main(int argc, char** argv)
     int port_base = 14000;
     vector< vector<int> > salary_value(number_inputs, vector<int>(number_variants));
 
-    if (argc < 4) {
-        cout << "Usage is bankers-bonus-client <client identifier> <number of spdz parties> "
-           << "<salary to compare> <finish (0 false, 1 true)> <optional host names..., default localhost> "
+    if (argc < 7) {
+        cout << "Usage is MPC-AS-client <client identifier> <number of spdz parties> "
+           << "<finish (0 false, 1 true)> <optional host names..., default localhost> "
            << "<optional spdz party port base number, default 14000>" << endl;
         exit(0);
     }
@@ -71,6 +72,16 @@ int main(int argc, char** argv)
     my_client_id = atoi(argv[1]);
     nparties = atoi(argv[2]);
     finish = atoi(argv[3]);
+
+    statistic_name = *argv[4];
+    if (statistic_name == 'L') {
+        number_variants = atoi(argv[5]);
+        number_bits = 8 * number_variants;
+    } else {
+        number_variants = 1;
+        number_bits = atoi(argv[5]);
+    }
+    isValid = *argv[6];
 
 
     // dataset input
@@ -91,7 +102,6 @@ int main(int argc, char** argv)
     if (!ifs.is_open()) {
         throw std::runtime_error("Failed to read " + file_name);
     }
-    // std::cout << file_name << endl;
 
     for (int i = 0; i < number_inputs; i++){
         std::getline(ifs, line);
@@ -103,35 +113,22 @@ int main(int argc, char** argv)
         }
     }
 
-    // // dataset input (test)
-    // for (int i = 0; i < number_inputs; i++)
-    // {
-    //     for (int j = 0; j < number_variants; j++)
-    //     {
-    //         if (statistic_name == 'L')        
-    //             salary_value[i][j] = j;
-    //         else
-    //             salary_value[i][j] = 1;
-    //     }
-    // }
-    // // salary_value[0][0] = 0;
-
 
     vector<string> hostnames(nparties, "localhost");
-    if (argc > 4)
+    if (argc > 7)
     {
-        if (argc < 4 + nparties)
+        if (argc < 7 + nparties)
         {
             cerr << "Not enough hostnames specified";
             exit(1);
         }
 
         for (int i = 0; i < nparties; i++)
-            hostnames[i] = argv[4 + i];
+            hostnames[i] = argv[7 + i];
     }
 
-    if (argc > 4 + nparties)
-        port_base = atoi(argv[4 + nparties]);
+    if (argc > 7 + nparties)
+        port_base = atoi(argv[7 + nparties]);
 
     bigint::init_thread();
 
