@@ -9,18 +9,18 @@ PORTNUM = 14000
 MAX_NUM_CLIENTS = 1
 n_rounds = 0  
 n_threads = 1
-number_inputs = 100000                 // the number of client inputs
-number_variants = 1                    // the number of values for each client
+number_inputs = 100000                 # the number of client inputs
+number_variants = 1                    # the number of values for each client
 number_bit_LR = 8
-number_bits = 8 * number_variants      // encoding bit length
-statistic_name = 'S'                   // statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR, E-MEAN
+number_bits = 8 * number_variants      # encoding bit length
+statistic_name = 'S'                   # statistics : S-SUM, V-VAR, F-FRQ, M-MAX, m-MIN, L-LR, E-MEAN
 communication_method = 'S'
 
 if len(program.args) > 1:
     n_rounds = int(program.args[1])
 
 if len(program.args) > 2:
-    program.active = bool(int(program.args[2]))
+    number_inputs = int(program.args[2])
 
 def accept_client():
     client_socket_id = accept_client_connection(PORTNUM)

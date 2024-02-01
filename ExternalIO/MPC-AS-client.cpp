@@ -24,7 +24,6 @@ void run(vector< vector<int> > salary_value, Client& client)
     {
     case 'S':
        client.send_private_inputs<int>(salary_value);
-       cout << "S" << endl;
        break;
     case 'M':
        client.send_private_inputs_MAX<int>(salary_value);
@@ -60,9 +59,8 @@ int main(int argc, char** argv)
     int nparties;
     int finish;
     int port_base = 14000;
-    vector< vector<int> > salary_value(number_inputs, vector<int>(number_variants));
 
-    if (argc < 7) {
+    if (argc < 8) {
         cout << "Usage is MPC-AS-client <client identifier> <number of spdz parties> "
            << "<finish (0 false, 1 true)> <optional host names..., default localhost> "
            << "<optional spdz party port base number, default 14000>" << endl;
@@ -82,10 +80,12 @@ int main(int argc, char** argv)
         number_bits = atoi(argv[5]);
     }
     isValid = *argv[6];
+    number_inputs = atoi(argv[7]);
 
+    vector< vector<int> > salary_value(number_inputs, vector<int>(number_variants));
 
     // dataset input
-    string file_path = "./Datasets/";
+    string file_path = "./ExternalIO/dataset/";
     string file_name;
 
     if (statistic_name == 'S' || statistic_name == 'V') 
@@ -113,22 +113,21 @@ int main(int argc, char** argv)
         }
     }
 
-
     vector<string> hostnames(nparties, "localhost");
-    if (argc > 7)
+    if (argc > 8)
     {
-        if (argc < 7 + nparties)
+        if (argc < 8 + nparties)
         {
             cerr << "Not enough hostnames specified";
             exit(1);
         }
 
         for (int i = 0; i < nparties; i++)
-            hostnames[i] = argv[7 + i];
+            hostnames[i] = argv[8 + i];
     }
 
-    if (argc > 7 + nparties)
-        port_base = atoi(argv[7 + nparties]);
+    if (argc > 8 + nparties)
+        port_base = atoi(argv[8 + nparties]);
 
     bigint::init_thread();
 

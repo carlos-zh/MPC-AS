@@ -498,9 +498,6 @@ void Client::send_private_inputs_LR(const vector< vector<T> >& values)
         {
 
             middle_value = values[i][j];
-            if (i < 5) {
-                cout << "middle value" << middle_value << " ";
-            }
             
             for (int b = j * number_bits / number_variants; b < (j + 1) * number_bits / number_variants - 1; b++)
             {
@@ -516,16 +513,8 @@ void Client::send_private_inputs_LR(const vector< vector<T> >& values)
                 }
                 
                 middle_value >>= 1;
-                if (i < 5) {
-                    cout << "x_array" << x_array[b] << " ";
-                }
             }
             x_array[(j + 1) * number_bits / number_variants - 1] = middle_value * 2 - 1;
-            if (i < 5) {
-                cout << "x_array" << x_array[(j + 1) * number_bits / number_variants - 1] << " ";
-            }
-            
-            
         }
 
 
@@ -649,7 +638,7 @@ void Client::send_private_inputs_MAX(const vector< vector<T> >& values)
         os.Send(socket);
     
     end = clock();                                                                
-    cout<< "client running time = " << double(end - start) / CLOCKS_PER_SEC << "s" << endl;
+    cout << "client running time = " << double(end - start) / CLOCKS_PER_SEC << "s" << endl;
 
 }
 
