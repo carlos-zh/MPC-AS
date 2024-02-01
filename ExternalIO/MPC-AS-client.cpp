@@ -85,7 +85,7 @@ int main(int argc, char** argv)
     vector< vector<int> > salary_value(number_inputs, vector<int>(number_variants));
 
     // dataset input
-    string file_path = "./ExternalIO/dataset/";
+    string file_path = "./Datasets/";
     string file_name;
 
     if (statistic_name == 'S' || statistic_name == 'V') 

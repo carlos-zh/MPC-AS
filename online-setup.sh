@@ -2,7 +2,7 @@
 
 make clean
 
-make -j 8 online
+make -j 8 tldr && make -j 8 online
 
 make Fake-Offline.x highgear-party.x
 
