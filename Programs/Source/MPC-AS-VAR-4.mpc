@@ -268,11 +268,11 @@ def VAR_run(number_clients, number_verified_clients):
     aggregate_result2[0] = aggregate_result2[0] / 4
     a1 = aggregate_result[0].reveal()
     a2 = aggregate_result2[0].reveal()
-    print_ln('The sum of X is %s, the sum of X^2 is %s', a1, a2)
+    print_ln('The sum of X (SUM(X)) is %s, the sum of X^2 (SUM(X^2)) is %s', a1, a2)
     tmp = a2 * number_verified_clients - a1 ** 2
     # finnal_result = cfix(tmp / (number_verified_clients ** 2))
     # print_ln('%s valid clients, the result of VAR is %s', number_verified_clients, finnal_result)
-    print_ln('%s valid inputs, the result of VAR can be calculated by the value of the sum (i.e. X) and sum of squares (i.e. X^2).', number_verified_clients)
+    print_ln('%s valid inputs, the result of VAR can be calculated by the value of the sum (SUM(X)) and sum of squares (SUM(X^2)).', number_verified_clients)
     stop_timer(1)
 
 

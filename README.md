@@ -19,7 +19,7 @@ For other operating systems, you can follow the instructions of [MP-SPDZ](https:
 
 ## Dataset
 
-We constructed datasets for different domains with varying statistics. Each dataset consists of 100,000 private inputs, simulating a scenario involving 100,000 clients. 
+We constructed datasets for varying statistics with different domains. Each dataset consists of 100,000 private inputs, simulating a scenario involving 100,000 clients. 
 
 The datasets include both cases with all valid inputs and cases with partially invalid inputs. The choice between these two cases can be made by adjusting the `<is_valid>` parameter. In the dataset with partially invalid inputs, there are 10 invalid inputs positioned at 1, 10001, 20001, 30001, ..., and 90001. It is worth noting that the MAX statistic does not require validation checks for data inputs due to its unique encoding method.
 
@@ -95,3 +95,4 @@ To calculate the SUM for 1000 clients, each possessing a 16-bit integer, follow 
 2. compile the clients' and servers' programs for computing SUM `./online-compile.sh S 16 1000`
 3. run the server program on one terminal: `./online-server-run.sh S 16 1000`
 4. run the client program on another terminal: `./online-client-run.sh S 16 N 1000`
+5. Repeat from step 2 as desired with different parameters
