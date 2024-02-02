@@ -90,9 +90,9 @@ To execute both the offline and online phases, follow the steps below:
     ```
 
 ## Usage example
-To calculate the SUM for 1000 clients, each possessing a 16-bit integer, follow the steps below:
+To calculate SUM for 1000 clients, each possessing a 16-bit integer, follow the steps below:
 1. compile the virtual machine and generate the necessary certificates and keys: `./online-setup.sh`
-2. compile the clients' and servers' programs for computing SUM `./online-compile.sh S 16 1000`
+2. compile the clients' and servers' programs for computing SUM: `./online-compile.sh S 16 1000`
 3. run the server program on one terminal: `./online-server-run.sh S 16 1000`
 4. run the client program on another terminal: `./online-client-run.sh S 16 N 1000`
-5. Repeat from step 2 as desired with different parameters
+5. repeat from step 2 as desired with different parameters
