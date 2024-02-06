@@ -146,10 +146,10 @@ void BaseMachine::print_timers()
   else
     cerr << "ex";
   cerr << "cluding preprocessing (offline phase)." << endl;
-  cerr << "Time = " << timer[0].elapsed() << " seconds " << endl;
+  cerr << "Overall Time = " << timer[0].elapsed() << " seconds " << endl;
   timer.erase(0);
   for (auto it = timer.begin(); it != timer.end(); it++)
-    cerr << "Time" << it->first << " = " << it->second.elapsed() << " seconds ("
+    cerr << "Server Running Time" << " = " << it->second.elapsed() << " seconds ("
         << it->second << ")" << endl;
 }
 
