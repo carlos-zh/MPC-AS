@@ -218,7 +218,6 @@ void Client::send_private_inputs(const vector< vector<T> >& values)
                 y += (r_array[j] * x_array[j] + 1)/2  * tmp_pow;
                 tmp_pow = tmp_pow + tmp_pow;
             }
-            y = y;
             y.pack(os);
         }
         
